@@ -266,9 +266,14 @@ function resize() {
 }
 window.addEventListener("resize", () => { resize(); drawDensity(); });
 
+/* map view-space coords (already unit-ish) to screen pixels */
+function project(x, y) { return [CX + R*zoom*x, CY - R*zoom*y]; }
+/* trace the globe disc (radius R*zoom*mul) as the current path */
+function discPath(mul) { ctx.beginPath(); ctx.arc(CX, CY, R*zoom*mul, 0, 7); }
+
 /* project a unit-ish 3D point (optionally raised) to screen; also returns visibility */
 function toScreen(p, rad) {
-  const X = CX + R*zoom*rad*p[0], Y = CY - R*zoom*rad*p[1];
+  const [X, Y] = project(rad*p[0], rad*p[1]);
   const rr = rad*Math.hypot(p[0],p[1]);
   const vis = p[2] >= 0 || rr > 1;   // behind hemisphere but outside silhouette is visible
   return [X, Y, vis];
@@ -290,7 +295,7 @@ function drawLand() {
         let [x,y,z] = view(ring[i]);
         if (z >= 0) anyVisible = true;
         else { const n = Math.hypot(x,y) || 1; x/=n; y/=n; }  // clamp to horizon
-        const sx = CX + R*zoom*x, sy = CY - R*zoom*y;
+        const [sx, sy] = project(x, y);
         if (!started) { ctx.moveTo(sx, sy); started = true; }
         else ctx.lineTo(sx, sy);
       }
@@ -306,9 +311,9 @@ function drawSphere() {
   g.addColorStop(0, "rgba(90,130,200,0.16)");
   g.addColorStop(1, "rgba(90,130,200,0)");
   ctx.fillStyle = g;
-  ctx.beginPath(); ctx.arc(CX, CY, R*zoom*1.06, 0, 7); ctx.fill();
+  discPath(1.06); ctx.fill();
 
-  ctx.beginPath(); ctx.arc(CX, CY, R*zoom, 0, 7);
+  discPath(1);
   ctx.fillStyle = C("--ocean"); ctx.fill();
   ctx.strokeStyle = "rgba(255,255,255,0.10)"; ctx.lineWidth = 1; ctx.stroke();
 }
@@ -319,32 +324,26 @@ function drawShading() {
   g.addColorStop(0, "rgba(160,185,235,0.10)");
   g.addColorStop(0.55, "rgba(120,140,190,0.02)");
   g.addColorStop(1, "rgba(0,0,0,0.38)");
-  ctx.beginPath(); ctx.arc(CX, CY, R*zoom, 0, 7);
+  discPath(1);
   ctx.fillStyle = g; ctx.fill();
 }
 
+/* stroke one great-/small-circle sampled by `at(step)` -> [lon,lat] */
+function graticuleLine(from, to, step, at) {
+  let pen = false;
+  for (let s=from; s<=to; s+=step) {
+    const [x,y,z] = view(unit(...at(s)));
+    if (z < 0) { pen = false; continue; }
+    const [sx, sy] = project(x, y);
+    pen ? ctx.lineTo(sx,sy) : ctx.moveTo(sx,sy); pen = true;
+  }
+}
 function drawGraticule() {
   ctx.strokeStyle = "rgba(255,255,255,0.045)";
   ctx.lineWidth = 0.7;
   ctx.beginPath();
-  for (let lon=-180; lon<180; lon+=30) {
-    let pen = false;
-    for (let lat=-88; lat<=88; lat+=3) {
-      const [x,y,z] = view(unit(lon,lat));
-      if (z < 0) { pen = false; continue; }
-      const sx = CX+R*zoom*x, sy = CY-R*zoom*y;
-      pen ? ctx.lineTo(sx,sy) : ctx.moveTo(sx,sy); pen = true;
-    }
-  }
-  for (let lat=-60; lat<=60; lat+=30) {
-    let pen = false;
-    for (let lon=-180; lon<=180; lon+=3) {
-      const [x,y,z] = view(unit(lon,lat));
-      if (z < 0) { pen = false; continue; }
-      const sx = CX+R*zoom*x, sy = CY-R*zoom*y;
-      pen ? ctx.lineTo(sx,sy) : ctx.moveTo(sx,sy); pen = true;
-    }
-  }
+  for (let lon=-180; lon<180; lon+=30) graticuleLine(-88, 88, 3, lat => [lon, lat]);   // meridians
+  for (let lat=-60; lat<=60; lat+=30) graticuleLine(-180, 180, 3, lon => [lon, lat]);  // parallels
   ctx.stroke();
 }
 
@@ -383,7 +382,7 @@ function drawArc(e, prog, alpha, lw, withHead) {
     vp[0]*=rad; vp[1]*=rad; vp[2]*=rad;
     const occluded = vp[2] < 0 && Math.hypot(vp[0],vp[1]) < 1;
     if (occluded) { pen = false; continue; }
-    const sx = CX + R*zoom*vp[0], sy = CY - R*zoom*vp[1];
+    const [sx, sy] = project(vp[0], vp[1]);
     pen ? ctx.lineTo(sx,sy) : ctx.moveTo(sx,sy); pen = true;
     if (i===n) head = [sx,sy];
   }
@@ -408,6 +407,12 @@ function dot(x, y, r, col, alpha, glow) {
   ctx.globalAlpha = 1;
 }
 
+/* draw an event's endpoint marker and register it as a hover target */
+function plotMarker(x, y, e, r, alpha, glow) {
+  dot(x, y, r, e.col, alpha, glow);
+  hoverTargets.push({x, y, e});
+}
+
 /* ================= timeline state ================= */
 let T = T0;
 let playing = false;
@@ -421,6 +426,7 @@ function fmt(t) { const d = new Date(t); return MONTHS[d.getUTCMonth()] + " " + 
 function fmtShort(t) { const d = new Date(t); return MONTHS[d.getUTCMonth()] + " " + d.getUTCFullYear(); }
 
 function visible(e) { return dirFilter === "all" || e.type === dirFilter; }
+function legRoute(e) { return e.from.city + " → " + e.to.city; }
 
 /* ================= hover ================= */
 let hoverTargets = [];   // {x,y,e}
@@ -477,7 +483,7 @@ function render() {
     else if (trailsOn) {
       drawArc(e, 1, 0.30, 1.1);
       const s = toScreen(view(e.vb), 1);
-      if (s[2]) { dot(s[0], s[1], 2.4, e.col, 0.75); hoverTargets.push({x:s[0], y:s[1], e}); }
+      if (s[2]) plotMarker(s[0], s[1], e, 2.4, 0.75);
     }
   }
   for (const e of active) {
@@ -485,10 +491,7 @@ function render() {
     const prog = Math.min(1, age/DRAW_DAYS);
     const fade = age <= DRAW_DAYS ? 1 : Math.max(0.13, 1 - 0.87*(age-DRAW_DAYS)/FADE_DAYS);
     const head = drawArc(e, prog, 0.35 + 0.6*fade, 1.6 + fade, true);
-    if (head) {
-      dot(head[0], head[1], 3.4, e.col, Math.min(1, 0.35+fade), prog < 1 || fade > 0.5);
-      hoverTargets.push({x:head[0], y:head[1], e});
-    }
+    if (head) plotMarker(head[0], head[1], e, 3.4, Math.min(1, 0.35+fade), prog < 1 || fade > 0.5);
     /* arrival pulse */
     if (prog >= 1 && age < DRAW_DAYS + 8*DAY) {
       const k = (age-DRAW_DAYS)/(8*DAY);
@@ -531,7 +534,7 @@ function updateHud() {
   feedEl.innerHTML = items.length ? items.map(e => {
     const fresh = (T - e.t) < 20*DAY;
     const route = e.type === "in"
-      ? (e.from.city + " → " + e.to.city)
+      ? legRoute(e)
       : ("Beijing → " + e.to.city + ", " + e.country);
     const who = e.type === "in" ? (e.name + " · " + e.country) : ("Xi Jinping → " + e.country);
     return '<div class="fe' + (fresh ? " fresh" : "") + '"><a href="' + e.src + '" target="_blank" rel="noopener">' +
@@ -651,7 +654,7 @@ document.getElementById("tablelink").addEventListener("click", (ev) => { ev.prev
     const dir = e.type === "in"
       ? '<span class="chip" style="background:'+COL_IN+'"></span>To China'
       : '<span class="chip" style="background:'+COL_OUT+'"></span>Xi abroad';
-    const route = e.from.city + " → " + e.to.city;
+    const route = legRoute(e);
     const flag = e.flag ? ' <span class="flagged" title="' + e.flag + '">?</span>' : "";
     let host = "";
     try { host = new URL(e.src).hostname.replace(/^www\./,""); } catch (_) {}
@@ -703,7 +706,7 @@ function updateHover() {
   /* highlight its arc */
   drawArc(e, 1, 0.95, 2.4);
   const who = e.type === "in" ? e.name + " — " + e.title + " of " + e.country : "Xi Jinping — trip to " + e.country;
-  const route = e.from.city + " → " + e.to.city + (e.type === "out" ? ", " + e.country : "");
+  const route = legRoute(e) + (e.type === "out" ? ", " + e.country : "");
   tip.innerHTML = '<div class="t-name"><span class="t-dot" style="background:'+e.col+'"></span>' + who + "</div>" +
     '<div class="t-route">' + route + " · " + fmt(e.t) + "</div>" +
     '<div class="t-meta">' + e.occasion + (e.flag ? " · ⚠ " + e.flag : "") + " · click for source</div>";
