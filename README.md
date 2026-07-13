@@ -3,7 +3,7 @@
 An interactive globe visualization of Xi Jinping's in-person diplomacy,
 November 2012 – July 2026 — the full Xi era:
 
-- **752 inbound visits** — every foreign head of state or government who met
+- **753 inbound visits** — every foreign head of state or government who met
   Xi Jinping in person in mainland China (state visits, APEC 2014, the 2015
   parade, G20 Hangzhou, BRF 2017/2019/2023, FOCAC 2018/2024, the 2022 Winter
   Olympics, SCO Qingdao/Tianjin, and more).
@@ -19,7 +19,7 @@ no dependencies, no build step, and no network access required.
 - Timeline scrubber with play button and a monthly event-density strip that
   marks the COVID border-closure period (Mar 2020 – Dec 2022).
 - Direction filters, cumulative trails toggle, hover tooltips.
-- Table view listing all 872 events; every row links to its source
+- Table view listing all 873 events; every row links to its source
   (Chinese MFA readouts, Xinhua, embassy releases, or major wire coverage).
 
 ## Data notes
