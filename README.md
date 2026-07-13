@@ -1,12 +1,13 @@
 # The World Comes to Xi
 
 An interactive globe visualization of Xi Jinping's in-person diplomacy,
-January 2020 – July 2026:
+November 2012 – July 2026 — the full Xi era:
 
-- **275 inbound visits** — every foreign head of state or government who met
-  Xi Jinping in person in mainland China (state visits, the 2022 Winter
-  Olympics, Belt & Road Forum 2023, FOCAC 2024, SCO Tianjin 2025, and more).
-- **26 outbound trips** — every international trip Xi made in the same window.
+- **752 inbound visits** — every foreign head of state or government who met
+  Xi Jinping in person in mainland China (state visits, APEC 2014, the 2015
+  parade, G20 Hangzhou, BRF 2017/2019/2023, FOCAC 2018/2024, the 2022 Winter
+  Olympics, SCO Qingdao/Tianjin, and more).
+- **120 outbound country-visits** — every international trip Xi made in the same window.
 
 Open **`index.html`** in any browser — it is a single self-contained file with
 no dependencies, no build step, and no network access required.
@@ -18,7 +19,7 @@ no dependencies, no build step, and no network access required.
 - Timeline scrubber with play button and a monthly event-density strip that
   marks the COVID border-closure period (Mar 2020 – Dec 2022).
 - Direction filters, cumulative trails toggle, hover tooltips.
-- Table view listing all 301 events; every row links to its source
+- Table view listing all 872 events; every row links to its source
   (Chinese MFA readouts, Xinhua, embassy releases, or major wire coverage).
 
 ## Data notes
