@@ -19,6 +19,9 @@ no dependencies, no build step, and no network access required.
 - Timeline scrubber with play button and a monthly event-density strip that
   marks the COVID border-closure period (Mar 2020 – Dec 2022).
 - Direction filters, cumulative trails toggle, hover tooltips.
+- Heat-map mode: countries shade brighter as their leaders' cumulative visits
+  to China grow with the timeline (validated sequential ramp; microstates too
+  small for the polygon data render as heat dots at their capitals).
 - Table view listing all 873 events; every row links to its source
   — 95% PRC official sources (MFA readouts, gov.cn, embassies, Xinhua/state
   media); the remaining ~40 rows cite foreign-government or press sources
