@@ -179,8 +179,8 @@
       <div class="lg in"><span class="swatch"></span>Leader → China</div>
       <div class="lg out"><span class="swatch"></span>Xi → abroad</div>
       <div class="lg" id="heat-legend" style="display:none">
-        <span id="heat-bar" style="width:64px;height:8px;border-radius:4px;background:linear-gradient(90deg,#1b4c84,#2262b3,#2a78d6,#5598e7,#9ec5f4)"></span>
-        <span>1 – <span id="heat-max-label"></span> visits</span>
+        <span id="heat-bar" style="width:64px;height:8px;border-radius:4px"></span>
+        <span id="heat-label"></span>
       </div>
     </div>
   </div>
@@ -330,51 +330,65 @@ const COUNTRY_CANON = {
   "São Tomé and Príncipe": "Sao Tome and Principe",
 };
 const canonCountry = (c) => COUNTRY_CANON[c] || c;
-const HEAT_RAMP = ["#1b4c84", "#2262b3", "#2a78d6", "#5598e7", "#9ec5f4"]; /* validated ordinal ramp */
+/* validated ordinal ramps: blue = inbound (leaders -> China), orange = outbound (Xi -> abroad) */
+const HEAT_RAMPS = {
+  in:  ["#1b4c84", "#2262b3", "#2a78d6", "#5598e7", "#9ec5f4"],
+  out: ["#8f3d15", "#b34a1e", "#d95926", "#e8895a", "#f4b993"],
+};
 let heatOn = false;
+/* heat direction follows the direction filter: "Xi abroad" tracks where Xi goes */
+function heatDir() { return dirFilter === "out" ? "out" : "in"; }
 function rampColor(count, max) {
-  const t = Math.sqrt(count / max) * (HEAT_RAMP.length - 1);
-  const i = Math.min(HEAT_RAMP.length - 2, Math.floor(t)), f = t - i;
-  const a = HEAT_RAMP[i], b = HEAT_RAMP[i + 1];
+  const ramp = HEAT_RAMPS[heatDir()];
+  const t = Math.sqrt(count / max) * (ramp.length - 1);
+  const i = Math.min(ramp.length - 2, Math.floor(t)), f = t - i;
+  const a = ramp[i], b = ramp[i + 1];
   const ch = (h, k) => parseInt(h.slice(1 + k * 2, 3 + k * 2), 16);
   const mix = (k) => Math.round(ch(a, k) + (ch(b, k) - ch(a, k)) * f);
   return `rgb(${mix(0)},${mix(1)},${mix(2)})`;
 }
-/* microstates absent from 110m polygons -> heat dot at capital (coords from first event) */
-const MICRO = {};
+/* microstates absent from 110m polygons -> heat dot (inbound: origin capital; outbound: destination) */
+const MICRO = { in: {}, out: {} };
 for (const e of EVENTS) {
-  if (e.type !== "in") continue;
   const c = canonCountry(e.country);
   if (c === "European Union") continue;
-  if (!MICRO[c]) MICRO[c] = { lat: e.from.lat, lon: e.from.lon };
+  const slot = MICRO[e.type];
+  const p = e.type === "in" ? e.from : e.to;
+  if (!slot[c]) slot[c] = { lat: p.lat, lon: p.lon };
 }
 const NE_NAMES = new Set(CNT.map(c => c.name));
 const hasPolygon = (c) => NE_NAMES.has(NE_ALIAS[c] || c);
-/* cumulative counts up to time t (cached per day) */
-let heatCacheDay = null, heatCounts = null;
+/* cumulative counts up to time t for a direction (cached per day+direction) */
+let heatCacheKey = null, heatCounts = null;
 function heatAt(t) {
-  const day = Math.floor(t / DAY);
-  if (heatCacheDay === day) return heatCounts;
-  heatCacheDay = day;
+  const dir = heatDir();
+  const key = Math.floor(t / DAY) + "|" + dir;
+  if (heatCacheKey === key) return heatCounts;
+  heatCacheKey = key;
   heatCounts = new Map();
   for (const e of EVENTS) {
     if (e.t > t) break;
-    if (e.type !== "in") continue;
+    if (e.type !== dir) continue;
     const c = canonCountry(e.country);
     if (c === "European Union") continue;
     heatCounts.set(c, (heatCounts.get(c) || 0) + 1);
   }
   return heatCounts;
 }
-/* fixed scale: max cumulative count over the whole era, so colors keep meaning while playing */
-const HEAT_MAX = (() => {
-  const m = new Map();
-  for (const e of EVENTS) if (e.type === "in") {
-    const c = canonCountry(e.country);
-    if (c !== "European Union") m.set(c, (m.get(c) || 0) + 1);
+/* fixed per-direction scale over the whole era, so colors keep meaning while playing */
+const HEAT_MAX_BY = (() => {
+  const out = {};
+  for (const dir of ["in", "out"]) {
+    const m = new Map();
+    for (const e of EVENTS) if (e.type === dir) {
+      const c = canonCountry(e.country);
+      if (c !== "European Union") m.set(c, (m.get(c) || 0) + 1);
+    }
+    out[dir] = Math.max(...m.values());
   }
-  return Math.max(...m.values());
+  return out;
 })();
+function heatMax() { return HEAT_MAX_BY[heatDir()]; }
 function drawLand() {
   ctx.fillStyle = C("--land");
   ctx.strokeStyle = C("--land-edge");
@@ -441,7 +455,7 @@ function drawCountriesGlobe(counts) {
     }
     if (anyVisible) {
       const n = countFor(c.name, counts);
-      ctx.fillStyle = n ? rampColor(n, HEAT_MAX) : C("--land");
+      ctx.fillStyle = n ? rampColor(n, heatMax()) : C("--land");
       ctx.fill("evenodd"); ctx.stroke();
     }
   }
@@ -451,7 +465,7 @@ const REV_ALIAS = Object.fromEntries(Object.entries(NE_ALIAS).map(([k, v]) => [v
 function countFor(neName, counts) { return counts.get(REV_ALIAS[neName] || neName) || 0; }
 
 function drawHeatDots(counts) {
-  for (const [c, pos] of Object.entries(MICRO)) {
+  for (const [c, pos] of Object.entries(MICRO[heatDir()])) {
     if (hasPolygon(c)) continue;
     const n = counts.get(c) || 0;
     if (!n) continue;
@@ -459,7 +473,7 @@ function drawHeatDots(counts) {
     if (viewMode === "map") { const p = mapXY(pos.lon, pos.lat); x = p[0]; y = p[1]; vis = true; }
     else { const s = toScreen(view(unit(pos.lon, pos.lat)), 1); x = s[0]; y = s[1]; vis = s[2]; }
     if (!vis) continue;
-    ctx.fillStyle = rampColor(n, HEAT_MAX);
+    ctx.fillStyle = rampColor(n, heatMax());
     ctx.globalAlpha = 0.95;
     ctx.beginPath(); ctx.arc(x, y, 2.5 + Math.sqrt(n), 0, 7); ctx.fill();
     ctx.globalAlpha = 1;
@@ -501,7 +515,7 @@ function drawMapBase() {
         path.closePath();
       }
       const n = countFor(c.name, counts);
-      ctx.fillStyle = n ? rampColor(n, HEAT_MAX) : C("--land");
+      ctx.fillStyle = n ? rampColor(n, heatMax()) : C("--land");
       ctx.fill(path, "evenodd"); ctx.stroke(path);
       mapCountryPaths.push({ path, name: c.name, n });
     }
@@ -881,6 +895,7 @@ document.querySelectorAll(".seg button[data-dir]").forEach(b => {
   b.addEventListener("click", () => {
     dirFilter = b.dataset.dir;
     document.querySelectorAll(".seg button[data-dir]").forEach(x => x.setAttribute("aria-pressed", String(x===b)));
+    updateHeatLegend();
   });
 });
 document.querySelectorAll(".seg button[data-view]").forEach(b => {
@@ -902,11 +917,19 @@ trailsBtn.addEventListener("click", () => {
   trailsBtn.setAttribute("aria-pressed", String(trailsOn));
 });
 const heatBtn = document.getElementById("heat");
+function updateHeatLegend() {
+  document.getElementById("heat-legend").style.display = heatOn ? "flex" : "none";
+  if (!heatOn) return;
+  document.getElementById("heat-bar").style.background =
+    "linear-gradient(90deg," + HEAT_RAMPS[heatDir()].join(",") + ")";
+  document.getElementById("heat-label").textContent = heatDir() === "out"
+    ? "1 – " + heatMax() + " Xi visits"
+    : "1 – " + heatMax() + " leader visits";
+}
 heatBtn.addEventListener("click", () => {
   heatOn = !heatOn;
   heatBtn.setAttribute("aria-pressed", String(heatOn));
-  document.getElementById("heat-legend").style.display = heatOn ? "flex" : "none";
-  document.getElementById("heat-max-label").textContent = HEAT_MAX;
+  updateHeatLegend();
   /* heat fill + 750 trails is unreadable — drop trails when heat comes on (re-enableable) */
   if (heatOn && trailsOn) { trailsOn = false; trailsBtn.setAttribute("aria-pressed", "false"); }
 });
@@ -993,7 +1016,9 @@ function updateHover() {
       const label = bdot ? bdot.c : (REV_ALIAS[cHit.name] || cHit.name);
       const n = bdot ? bdot.n : cHit.n;
       tip.innerHTML = '<div class="t-name">' + label + "</div>" +
-        '<div class="t-route">' + n + (n === 1 ? " leader visit" : " leader visits") + " to China by " + fmt(T) + "</div>";
+        '<div class="t-route">' + (heatDir() === "out"
+          ? n + (n === 1 ? " Xi visit" : " Xi visits") + " by " + fmt(T)
+          : n + (n === 1 ? " leader visit" : " leader visits") + " to China by " + fmt(T)) + "</div>";
       tip.style.display = "block";
       const tw = tip.offsetWidth, th = tip.offsetHeight;
       let tx = mouse[0]+16, ty = mouse[1]-th-10;
