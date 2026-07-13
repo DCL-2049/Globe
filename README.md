@@ -20,7 +20,9 @@ no dependencies, no build step, and no network access required.
   marks the COVID border-closure period (Mar 2020 – Dec 2022).
 - Direction filters, cumulative trails toggle, hover tooltips.
 - Table view listing all 873 events; every row links to its source
-  (Chinese MFA readouts, Xinhua, embassy releases, or major wire coverage).
+  — 95% PRC official sources (MFA readouts, gov.cn, embassies, Xinhua/state
+  media); the remaining ~40 rows cite foreign-government or press sources
+  where no PRC readout exists (e.g. brief APEC 2014 encounters).
 
 ## Data notes
 
