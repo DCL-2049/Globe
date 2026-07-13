@@ -158,12 +158,21 @@
 
   <div id="controls">
     <button id="play-alias" class="btn" style="display:none"></button>
+    <div class="seg" role="group" aria-label="View">
+      <button data-view="globe" aria-pressed="true">Globe</button>
+      <button data-view="map" aria-pressed="false">Map</button>
+    </div>
     <div class="seg" role="group" aria-label="Direction filter">
       <button data-dir="all" aria-pressed="true">All</button>
       <button data-dir="in" aria-pressed="false">To China</button>
       <button data-dir="out" aria-pressed="false">Xi abroad</button>
     </div>
     <button id="trails" class="btn" aria-pressed="true">Trails</button>
+    <div class="seg" role="group" aria-label="Playback speed">
+      <button data-speed="0.5" aria-pressed="false">½×</button>
+      <button data-speed="1" aria-pressed="true">1×</button>
+      <button data-speed="2" aria-pressed="false">2×</button>
+    </div>
     <button id="tablebtn" class="btn" aria-pressed="false">Table view</button>
     <div id="legend" aria-hidden="true">
       <div class="lg in"><span class="swatch"></span>Leader → China</div>
@@ -206,7 +215,7 @@
   </div>
 
   <footer>
-    Drag to rotate · scroll to zoom · hover a marker for details, click to open the source.
+    Globe: drag to rotate, scroll to zoom · Map: flat overview of every arc at once · hover a marker for details, click to open the source.
     Each visit/trip is individually sourced — see <a href="#" id="tablelink">table view</a> for citations. Compiled July 2026.
   </footer>
 </div>
@@ -234,6 +243,14 @@ EVENTS.sort((a,b) => a.t - b.t);
 /* ================= projection ================= */
 const D2R = Math.PI/180;
 let BEIJING_V; /* set after unit() defined */
+let viewMode = "globe";              /* "globe" | "map" */
+const MAP_CLON = 150;                /* Pacific-centered: China near middle, Americas intact */
+const wrapLon = (d) => ((d + 180) % 360 + 360) % 360 - 180;
+function mapScale() { return Math.min(W/385, H/205); }
+function mapXY(lon, lat) {
+  const s = mapScale();
+  return [CX + wrapLon(lon - MAP_CLON)*s, CY - lat*s];
+}
 let lam0 = 78*D2R, phi0 = 26*D2R;      // view center (lon, lat)
 let zoom = 1;
 function unit(lon, lat) {
@@ -277,6 +294,16 @@ function toScreen(p, rad) {
 /* ================= land rendering ================= */
 /* precompute unit vectors for every ring point */
 const LANDV = LAND.map(f => f.map(ring => ring.map(([lon,lat]) => unit(lon,lat))));
+/* map mode: rings with longitudes unwrapped to be continuous around MAP_CLON */
+const LANDM = LAND.map(f => f.map(ring => {
+  let prev = wrapLon(ring[0][0] - MAP_CLON);
+  return ring.map(([lon, lat], i) => {
+    let w = wrapLon(lon - MAP_CLON);
+    if (i > 0) { while (w - prev > 180) w -= 360; while (w - prev < -180) w += 360; }
+    prev = w;
+    return [w, lat];
+  });
+}));
 function drawLand() {
   ctx.fillStyle = C("--land");
   ctx.strokeStyle = C("--land-edge");
@@ -323,6 +350,52 @@ function drawShading() {
   ctx.fillStyle = g; ctx.fill();
 }
 
+/* ================= flat map rendering ================= */
+function drawMapBase() {
+  const s = mapScale();
+  const x0 = CX - 180*s, y0 = CY - 90*s, w = 360*s, h = 180*s;
+  ctx.save();
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x0, y0, w, h, 10); else ctx.rect(x0, y0, w, h);
+  ctx.fillStyle = C("--ocean"); ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.10)"; ctx.lineWidth = 1; ctx.stroke();
+  ctx.clip();
+  /* graticule */
+  ctx.strokeStyle = "rgba(255,255,255,0.045)";
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  for (let w2 = -180; w2 <= 180; w2 += 30) { ctx.moveTo(CX + w2*s, y0); ctx.lineTo(CX + w2*s, y0 + h); }
+  for (let lat = -60; lat <= 60; lat += 30) { ctx.moveTo(x0, CY - lat*s); ctx.lineTo(x0 + w, CY - lat*s); }
+  ctx.stroke();
+  /* land */
+  ctx.fillStyle = C("--land");
+  ctx.strokeStyle = C("--land-edge");
+  ctx.lineWidth = 0.6;
+  for (const feat of LANDM) {
+    ctx.beginPath();
+    for (const ring of feat) {
+      for (let i = 0; i < ring.length; i++) {
+        const sx = CX + ring[i][0]*s, sy = CY - ring[i][1]*s;
+        i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy);
+      }
+      ctx.closePath();
+    }
+    ctx.fill("evenodd"); ctx.stroke();
+  }
+  ctx.restore();
+}
+/* quadratic-bezier point for a map arc */
+function mapArcPoint(A, B, Cp, t) {
+  const u = 1 - t;
+  return [u*u*A[0] + 2*u*t*Cp[0] + t*t*B[0], u*u*A[1] + 2*u*t*Cp[1] + t*t*B[1]];
+}
+function mapArcCtrl(A, B) {
+  const dx = B[0]-A[0], dy = B[1]-A[1];
+  const dist = Math.hypot(dx, dy);
+  const lift = Math.min(70, Math.max(10, dist*0.18));
+  return [(A[0]+B[0])/2, (A[1]+B[1])/2 - lift];
+}
+
 function drawGraticule() {
   ctx.strokeStyle = "rgba(255,255,255,0.045)";
   ctx.lineWidth = 0.7;
@@ -367,6 +440,7 @@ const DRAW_DAYS = 6*DAY;    // arc takes 6 timeline-days to draw
 const FADE_DAYS = 30*DAY;   // then fades to trail over 30
 
 function drawArc(e, prog, alpha, lw, withHead) {
+  if (viewMode === "map") return drawArcMap(e, prog, alpha, lw, withHead);
   const N = 44;
   const n = Math.max(2, Math.round(N*prog));
   ctx.strokeStyle = e.col;
@@ -392,6 +466,31 @@ function drawArc(e, prog, alpha, lw, withHead) {
   return withHead ? head : null;
 }
 
+function drawArcMap(e, prog, alpha, lw, withHead) {
+  const A = mapXY(e.from.lon, e.from.lat), B = mapXY(e.to.lon, e.to.lat);
+  const Cp = mapArcCtrl(A, B);
+  const N = 32, n = Math.max(2, Math.round(N*prog));
+  ctx.strokeStyle = e.col;
+  ctx.globalAlpha = alpha;
+  ctx.lineWidth = lw;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  let head = null;
+  for (let i = 0; i <= n; i++) {
+    const p = mapArcPoint(A, B, Cp, prog*i/n);
+    i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]);
+    if (i === n) head = p;
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  return withHead ? head : null;
+}
+/* destination point + visibility, in the active view */
+function destXY(e) {
+  if (viewMode === "map") { const p = mapXY(e.to.lon, e.to.lat); return [p[0], p[1], true]; }
+  return toScreen(view(e.vb), 1);
+}
+
 function dot(x, y, r, col, alpha, glow) {
   ctx.globalAlpha = alpha;
   if (glow) {
@@ -413,7 +512,8 @@ let T = T0;
 let playing = false;
 let dirFilter = "all";
 let trailsOn = true;
-const SPEED = 90*DAY;  // timeline-days per real second (~55s full run)
+const BASE_SPEED = 45*DAY;  // timeline-days per real second at 1x (~110s full run)
+let speedMul = 1;
 const scrub = document.getElementById("scrub");
 const readout = document.getElementById("date-readout");
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -434,7 +534,7 @@ function frame(ts) {
   const dt = lastFrame ? (ts-lastFrame)/1000 : 0;
   lastFrame = ts;
   if (playing) {
-    T += SPEED*dt;
+    T += BASE_SPEED*speedMul*dt;
     if (T >= T1) { T = T1; setPlaying(false); }
     syncScrub();
   }
@@ -443,14 +543,20 @@ function frame(ts) {
 function render() {
   ctx.setTransform(DPR,0,0,DPR,0,0);
   ctx.clearRect(0,0,W,H);
-  setRot();
-  drawSphere();
-  drawGraticule();
-  drawLand();
-  drawShading();
+  if (viewMode === "map") {
+    drawMapBase();
+  } else {
+    setRot();
+    drawSphere();
+    drawGraticule();
+    drawLand();
+    drawShading();
+  }
 
   /* persistent Beijing marker */
-  const bj = toScreen(view(BEIJING_V), 1.0);
+  const bj = viewMode === "map"
+    ? [...mapXY(116.4, 39.9), true]
+    : toScreen(view(BEIJING_V), 1.0);
   if (bj[2]) {
     ctx.fillStyle = "#f0e0b0";
     ctx.globalAlpha = 0.95;
@@ -476,7 +582,7 @@ function render() {
     if (age <= DRAW_DAYS + FADE_DAYS) active.push(e);
     else if (trailsOn) {
       drawArc(e, 1, 0.30, 1.1);
-      const s = toScreen(view(e.vb), 1);
+      const s = destXY(e);
       if (s[2]) { dot(s[0], s[1], 2.4, e.col, 0.75); hoverTargets.push({x:s[0], y:s[1], e}); }
     }
   }
@@ -492,7 +598,7 @@ function render() {
     /* arrival pulse */
     if (prog >= 1 && age < DRAW_DAYS + 8*DAY) {
       const k = (age-DRAW_DAYS)/(8*DAY);
-      const s = toScreen(view(e.vb), 1);
+      const s = destXY(e);
       if (s[2]) {
         ctx.globalAlpha = (1-k)*0.6;
         ctx.strokeStyle = e.col; ctx.lineWidth = 1.4;
@@ -630,10 +736,23 @@ scrub.addEventListener("input", () => {
   T = T0 + (T1-T0)*scrub.value/1000;
   setPlaying(false);
 });
-document.querySelectorAll(".seg button").forEach(b => {
+document.querySelectorAll(".seg button[data-dir]").forEach(b => {
   b.addEventListener("click", () => {
     dirFilter = b.dataset.dir;
-    document.querySelectorAll(".seg button").forEach(x => x.setAttribute("aria-pressed", String(x===b)));
+    document.querySelectorAll(".seg button[data-dir]").forEach(x => x.setAttribute("aria-pressed", String(x===b)));
+  });
+});
+document.querySelectorAll(".seg button[data-view]").forEach(b => {
+  b.addEventListener("click", () => {
+    viewMode = b.dataset.view;
+    cv.style.cursor = viewMode === "map" ? "default" : "grab";
+    document.querySelectorAll(".seg button[data-view]").forEach(x => x.setAttribute("aria-pressed", String(x===b)));
+  });
+});
+document.querySelectorAll(".seg button[data-speed]").forEach(b => {
+  b.addEventListener("click", () => {
+    speedMul = +b.dataset.speed;
+    document.querySelectorAll(".seg button[data-speed]").forEach(x => x.setAttribute("aria-pressed", String(x===b)));
   });
 });
 const trailsBtn = document.getElementById("trails");
@@ -670,6 +789,7 @@ document.getElementById("tablelink").addEventListener("click", (ev) => { ev.prev
 /* ================= globe interaction ================= */
 let drag = null;
 cv.addEventListener("pointerdown", (ev) => {
+  if (viewMode === "map") { drag = {x:ev.clientX, y:ev.clientY, moved:false, map:true}; return; }
   drag = {x:ev.clientX, y:ev.clientY, lam:lam0, phi:phi0, moved:false};
   cv.setPointerCapture(ev.pointerId);
   cv.classList.add("dragging");
@@ -680,6 +800,7 @@ cv.addEventListener("pointermove", (ev) => {
   if (!drag) return;
   const dx = ev.clientX-drag.x, dy = ev.clientY-drag.y;
   if (Math.abs(dx)+Math.abs(dy) > 3) drag.moved = true;
+  if (drag.map) return;
   const k = 1/(R*zoom);
   lam0 = drag.lam + dx*k;
   phi0 = Math.max(-1.45, Math.min(1.45, drag.phi + dy*k));
@@ -691,6 +812,7 @@ cv.addEventListener("pointerup", (ev) => {
 });
 cv.addEventListener("pointerleave", () => { mouse = null; tip.style.display = "none"; });
 cv.addEventListener("wheel", (ev) => {
+  if (viewMode === "map") return;
   ev.preventDefault();
   zoom = Math.max(0.55, Math.min(2.6, zoom * (ev.deltaY < 0 ? 1.09 : 0.92)));
 }, {passive:false});
