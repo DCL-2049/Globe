@@ -168,6 +168,7 @@
       <button data-view="map" aria-pressed="true">Map</button>
     </div>
     <div class="seg" role="group" aria-label="Direction filter">
+      <button data-dir="all" aria-pressed="false">China overview</button>
       <button data-dir="in" aria-pressed="true">To China</button>
       <button data-dir="out" aria-pressed="false">Xi abroad</button>
       <button data-dir="vs" aria-pressed="false">China vs US</button>
@@ -713,6 +714,7 @@ function fmt(t) { const d = new Date(t); return MONTHS[d.getUTCMonth()] + " " + 
 function fmtShort(t) { const d = new Date(t); return MONTHS[d.getUTCMonth()] + " " + d.getUTCFullYear(); }
 
 function visible(e) {
+  if (dirFilter === "all") return e.type !== "us";       /* combined China-focused overview */
   if (dirFilter === "vs") return e.type !== "out";       /* both inbound streams, no Xi trips  */
   return e.type === dirFilter;
 }
