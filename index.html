@@ -164,20 +164,19 @@
   <div id="controls">
     <button id="play-alias" class="btn" style="display:none"></button>
     <div class="seg" role="group" aria-label="View">
-      <button data-view="globe" aria-pressed="true">Globe</button>
-      <button data-view="map" aria-pressed="false">Map</button>
+      <button data-view="globe" aria-pressed="false">Globe</button>
+      <button data-view="map" aria-pressed="true">Map</button>
     </div>
     <div class="seg" role="group" aria-label="Direction filter">
-      <button data-dir="all" aria-pressed="true">All</button>
-      <button data-dir="in" aria-pressed="false">To China</button>
+      <button data-dir="in" aria-pressed="true">To China</button>
       <button data-dir="out" aria-pressed="false">Xi abroad</button>
       <button data-dir="vs" aria-pressed="false">China vs US</button>
     </div>
-    <button id="trails" class="btn" aria-pressed="true">Trails</button>
-    <button id="heat" class="btn" aria-pressed="false" title="Color countries by cumulative leader visits to China">Heat map</button>
+    <button id="trails" class="btn" aria-pressed="false">Trails</button>
+    <button id="heat" class="btn" aria-pressed="true" title="Color countries by cumulative leader visits to China">Heat map</button>
     <div class="seg" role="group" aria-label="Playback speed">
-      <button data-speed="0.5" aria-pressed="false">½×</button>
-      <button data-speed="1" aria-pressed="true">1×</button>
+      <button data-speed="0.5" aria-pressed="true">½×</button>
+      <button data-speed="1" aria-pressed="false">1×</button>
       <button data-speed="2" aria-pressed="false">2×</button>
     </div>
     <button id="tablebtn" class="btn" aria-pressed="false">Table view</button>
@@ -257,7 +256,7 @@ EVENTS.sort((a,b) => a.t - b.t);
 /* ================= projection ================= */
 const D2R = Math.PI/180;
 let BEIJING_V; /* set after unit() defined */
-let viewMode = "globe";              /* "globe" | "map" */
+let viewMode = "map";                /* "globe" | "map" */
 const MAP_CLON = 150;                /* Pacific-centered: China near middle, Americas intact */
 const wrapLon = (d) => ((d + 180) % 360 + 360) % 360 - 180;
 function mapScale() { return Math.min(W/385, H/205); }
@@ -345,7 +344,7 @@ const HEAT_RAMPS = {
 };
 const COMPARISON_HOSTS = new Set(["China", "United States"]);
 const COMPARISON_HOST_FILL = "#686873";
-let heatOn = false;
+let heatOn = true;
 /* heat direction follows the direction filter: "Xi abroad" tracks where Xi goes; "vs" is bivariate */
 function heatDir() { return dirFilter === "out" ? "out" : dirFilter === "vs" ? "vs" : "in"; }
 function rampColor(count, max) {
@@ -703,10 +702,10 @@ function dot(x, y, r, col, alpha, glow) {
 /* ================= timeline state ================= */
 let T = T0;
 let playing = false;
-let dirFilter = "all";
-let trailsOn = true;
+let dirFilter = "in";
+let trailsOn = false;
 const BASE_SPEED = 45*DAY;  // timeline-days per real second at 1x (~110s full run)
-let speedMul = 1;
+let speedMul = 0.5;
 const scrub = document.getElementById("scrub");
 const readout = document.getElementById("date-readout");
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -714,7 +713,6 @@ function fmt(t) { const d = new Date(t); return MONTHS[d.getUTCMonth()] + " " + 
 function fmtShort(t) { const d = new Date(t); return MONTHS[d.getUTCMonth()] + " " + d.getUTCFullYear(); }
 
 function visible(e) {
-  if (dirFilter === "all") return e.type !== "us";       /* default view stays the China story */
   if (dirFilter === "vs") return e.type !== "out";       /* both inbound streams, no Xi trips  */
   return e.type === dirFilter;
 }
@@ -1155,6 +1153,7 @@ function updateHover() {
 resize();
 drawDensity();
 syncScrub();
+updateHeatLegend();
 requestAnimationFrame(frame);
 </script>
 </body>
