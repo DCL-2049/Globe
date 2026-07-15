@@ -338,10 +338,10 @@ const COUNTRY_CANON = {
   "São Tomé and Príncipe": "Sao Tome and Principe",
 };
 const canonCountry = (c) => COUNTRY_CANON[c] || c;
-/* validated ordinal ramps: red = inbound (leaders -> China), orange = outbound (Xi -> abroad) */
+/* validated ordinal ramps: light = fewer visits, dark = more visits */
 const HEAT_RAMPS = {
-  in:  ["#7d2429", "#a83238", "#cf454c", "#e66b70", "#f3a2a5"],
-  out: ["#8f3d15", "#b34a1e", "#d95926", "#e8895a", "#f4b993"],
+  in:  ["#f3a2a5", "#e66b70", "#cf454c", "#a83238", "#7d2429"],
+  out: ["#f4b993", "#e8895a", "#d95926", "#b34a1e", "#8f3d15"],
 };
 const COMPARISON_HOSTS = new Set(["China", "United States"]);
 const COMPARISON_HOST_FILL = "#686873";
