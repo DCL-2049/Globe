@@ -338,11 +338,13 @@ const COUNTRY_CANON = {
   "São Tomé and Príncipe": "Sao Tome and Principe",
 };
 const canonCountry = (c) => COUNTRY_CANON[c] || c;
-/* validated ordinal ramps: blue = inbound (leaders -> China), orange = outbound (Xi -> abroad) */
+/* validated ordinal ramps: red = inbound (leaders -> China), orange = outbound (Xi -> abroad) */
 const HEAT_RAMPS = {
-  in:  ["#1b4c84", "#2262b3", "#2a78d6", "#5598e7", "#9ec5f4"],
+  in:  ["#7d2429", "#a83238", "#cf454c", "#e66b70", "#f3a2a5"],
   out: ["#8f3d15", "#b34a1e", "#d95926", "#e8895a", "#f4b993"],
 };
+const COMPARISON_HOSTS = new Set(["China", "United States"]);
+const COMPARISON_HOST_FILL = "#686873";
 let heatOn = false;
 /* heat direction follows the direction filter: "Xi abroad" tracks where Xi goes; "vs" is bivariate */
 function heatDir() { return dirFilter === "out" ? "out" : dirFilter === "vs" ? "vs" : "in"; }
@@ -401,6 +403,7 @@ function bivarColor(cn, us) {
 /* unified per-country fill for the active heat mode; returns null for "no data -> base land" */
 function heatFill(counts, canonName) {
   if (heatDir() === "vs") {
+    if (COMPARISON_HOSTS.has(canonName)) return COMPARISON_HOST_FILL;
     const cn = counts.cn.get(canonName) || 0, us = counts.us.get(canonName) || 0;
     return (cn || us) ? bivarColor(cn, us) : null;
   }
@@ -1006,7 +1009,7 @@ function updateHeatLegend() {
     bar.style.background = "none";
     bar.innerHTML = '<span id="bivar-grid">' + cells + "</span>";
     bar.style.width = "50px"; bar.style.height = "50px";
-    lbl.textContent = "→ China visits · ↑ US visits";
+    lbl.textContent = "→ China visits · ↑ US visits · China & US shown in grey";
   } else {
     bar.innerHTML = "";
     bar.style.width = "64px"; bar.style.height = "8px";
