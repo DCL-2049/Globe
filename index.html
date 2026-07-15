@@ -105,7 +105,13 @@
 
   /* ---------- timeline ---------- */
   #timeline { padding: 6px 20px 16px; }
+  #density-wrap { position:relative; }
   #density { width:100%; height:34px; display:block; }
+  #density-head {
+    position:absolute; top:0; bottom:0; left:54px; width:1px;
+    background:rgba(240,224,176,.72); box-shadow:0 0 5px rgba(240,224,176,.28);
+    pointer-events:none; transform:translateX(-.5px);
+  }
   #scrub-row { display:flex; align-items:center; gap:14px; }
   #play {
     width:40px; height:40px; border-radius:50%; flex:none;
@@ -123,7 +129,7 @@
   #scrub::-moz-range-track { height:4px; border-radius:2px; background:var(--hairline); }
   #scrub::-moz-range-thumb { width:12px; height:12px; border-radius:50%; background:var(--ink); border:2px solid var(--page); }
   #date-readout { font-variant-numeric: tabular-nums; color:var(--ink); font-size:15px; font-weight:600; width:118px; text-align:right; flex:none; }
-  #yearticks { display:flex; margin-top:2px; padding:0 54px 0 174px; }
+  #yearticks { display:flex; margin-top:2px; padding:0 132px 0 54px; }
   #yearticks span { flex:1; font-size:11px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
 
   /* ---------- table view ---------- */
@@ -217,7 +223,10 @@
   </div>
 
   <div id="timeline">
-    <canvas id="density"></canvas>
+    <div id="density-wrap">
+      <canvas id="density"></canvas>
+      <i id="density-head" aria-hidden="true"></i>
+    </div>
     <div id="scrub-row">
       <button id="play" aria-label="Play timeline">▶</button>
       <input id="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="Timeline scrubber">
@@ -544,21 +553,12 @@ function drawMapBase() {
   ctx.lineWidth = 0.6;
   if (heatOn) {
     const counts = heatAt(T);
-    mapCountryPaths = [];
-    for (const c of CNT) {
-      const path = new Path2D();
-      for (const ring of c.m) {
-        for (let i = 0; i < ring.length; i++) {
-          const sx = CX + ring[i][0]*s, sy = CY - ring[i][1]*s;
-          i ? path.lineTo(sx, sy) : path.moveTo(sx, sy);
-        }
-        path.closePath();
-      }
-      const canon = REV_ALIAS[c.name] || c.name;
-      const fill = heatFill(counts, canon);
+    ensureMapCountryPaths(s);
+    for (const p of mapCountryPaths) {
+      const fill = heatFill(counts, p.canon);
       ctx.fillStyle = fill || C("--land");
-      ctx.fill(path, "evenodd"); ctx.stroke(path);
-      mapCountryPaths.push({ path, name: c.name, canon, hasData: !!fill });
+      ctx.fill(p.path, "evenodd"); ctx.stroke(p.path);
+      p.hasData = !!fill;
     }
   } else {
     ctx.fillStyle = C("--land");
@@ -577,6 +577,23 @@ function drawMapBase() {
   ctx.restore();
 }
 let mapCountryPaths = [];
+let mapCountryPathsKey = "";
+function ensureMapCountryPaths(s) {
+  const key = W + "|" + H + "|" + s;
+  if (key === mapCountryPathsKey) return;
+  mapCountryPathsKey = key;
+  mapCountryPaths = CNT.map(c => {
+    const path = new Path2D();
+    for (const ring of c.m) {
+      for (let i = 0; i < ring.length; i++) {
+        const sx = CX + ring[i][0]*s, sy = CY - ring[i][1]*s;
+        i ? path.lineTo(sx, sy) : path.moveTo(sx, sy);
+      }
+      path.closePath();
+    }
+    return { path, name:c.name, canon:REV_ALIAS[c.name] || c.name, hasData:false };
+  });
+}
 /* quadratic-bezier point for a map arc */
 function mapArcPoint(A, B, Cp, t) {
   const u = 1 - t;
@@ -660,22 +677,25 @@ function drawArc(e, prog, alpha, lw, withHead) {
 }
 
 function drawArcMap(e, prog, alpha, lw, withHead) {
+  return strokeMapArc(ctx, e, prog, alpha, lw, withHead);
+}
+function strokeMapArc(g, e, prog, alpha, lw, withHead) {
   const A = mapXY(e.from.lon, e.from.lat), B = mapXY(e.to.lon, e.to.lat);
   const Cp = mapArcCtrl(A, B);
   const N = 32, n = Math.max(2, Math.round(N*prog));
-  ctx.strokeStyle = e.col;
-  ctx.globalAlpha = alpha;
-  ctx.lineWidth = lw;
-  ctx.lineCap = "round";
-  ctx.beginPath();
+  g.strokeStyle = e.col;
+  g.globalAlpha = alpha;
+  g.lineWidth = lw;
+  g.lineCap = "round";
+  g.beginPath();
   let head = null;
   for (let i = 0; i <= n; i++) {
     const p = mapArcPoint(A, B, Cp, prog*i/n);
-    i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]);
+    i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]);
     if (i === n) head = p;
   }
-  ctx.stroke();
-  ctx.globalAlpha = 1;
+  g.stroke();
+  g.globalAlpha = 1;
   return withHead ? head : null;
 }
 /* destination point + visibility, in the active view */
@@ -685,19 +705,22 @@ function destXY(e) {
 }
 
 function dot(x, y, r, col, alpha, glow) {
-  ctx.globalAlpha = alpha;
+  paintDot(ctx, x, y, r, col, alpha, glow);
+}
+function paintDot(g, x, y, r, col, alpha, glow) {
+  g.globalAlpha = alpha;
   if (glow) {
-    const g = ctx.createRadialGradient(x,y,0, x,y, r*3.2);
-    g.addColorStop(0, col); g.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(x,y,r*3.2,0,7); ctx.fill();
+    const halo = g.createRadialGradient(x,y,0, x,y, r*3.2);
+    halo.addColorStop(0, col); halo.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = halo;
+    g.beginPath(); g.arc(x,y,r*3.2,0,7); g.fill();
   }
-  ctx.fillStyle = col;
-  ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill();
+  g.fillStyle = col;
+  g.beginPath(); g.arc(x,y,r,0,7); g.fill();
   /* 2px surface ring so overlapping marks separate */
-  ctx.strokeStyle = C("--page"); ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.stroke();
-  ctx.globalAlpha = 1;
+  g.strokeStyle = C("--page"); g.lineWidth = 1.5;
+  g.beginPath(); g.arc(x,y,r,0,7); g.stroke();
+  g.globalAlpha = 1;
 }
 
 /* ================= timeline state ================= */
@@ -723,6 +746,27 @@ function visible(e) {
 let hoverTargets = [];   // {x,y,e}
 const tip = document.getElementById("tooltip");
 let mouse = null, hoverEv = null;
+
+/* completed flat-map trails are static between event arrivals; cache that layer */
+const mapTrailLayer = document.createElement("canvas");
+const mapTrailCtx = mapTrailLayer.getContext("2d");
+let mapTrailCacheKey = "";
+function drawCachedMapTrails(events) {
+  const last = events.length ? events[events.length-1].t : 0;
+  const key = W + "|" + H + "|" + DPR + "|" + dirFilter + "|" + events.length + "|" + last;
+  if (key !== mapTrailCacheKey) {
+    mapTrailCacheKey = key;
+    mapTrailLayer.width = W*DPR; mapTrailLayer.height = H*DPR;
+    mapTrailCtx.setTransform(DPR,0,0,DPR,0,0);
+    mapTrailCtx.clearRect(0,0,W,H);
+    for (const e of events) {
+      strokeMapArc(mapTrailCtx, e, 1, 0.30, 1.1, false);
+      const p = mapXY(e.to.lon, e.to.lat);
+      paintDot(mapTrailCtx, p[0], p[1], 2.4, e.col, 0.75, false);
+    }
+  }
+  ctx.drawImage(mapTrailLayer, 0, 0, W, H);
+}
 
 /* ================= render loop ================= */
 let lastFrame = 0;
@@ -795,12 +839,21 @@ function render() {
 
   hoverTargets = [];
   /* completed arcs (trails) first, then active, then heads */
-  const active = [];
+  const active = [], completed = [];
   for (const e of EVENTS) {
     if (!visible(e) || e.t > T) continue;
     const age = T - e.t;
     if (age <= DRAW_DAYS + FADE_DAYS) active.push(e);
-    else if (trailsOn) {
+    else if (trailsOn) completed.push(e);
+  }
+  if (trailsOn && viewMode === "map") {
+    drawCachedMapTrails(completed);
+    for (const e of completed) {
+      const s = destXY(e);
+      if (s[2]) hoverTargets.push({x:s[0], y:s[1], e});
+    }
+  } else if (trailsOn) {
+    for (const e of completed) {
       drawArc(e, 1, 0.30, 1.1);
       const s = destXY(e);
       if (s[2]) { dot(s[0], s[1], 2.4, e.col, 0.75); hoverTargets.push({x:s[0], y:s[1], e}); }
@@ -883,6 +936,7 @@ function updateHud() {
 /* ================= density strip ================= */
 const dcv = document.getElementById("density");
 const dctx = dcv.getContext("2d");
+const densityHead = document.getElementById("density-head");
 function drawDensity() {
   const r = dcv.getBoundingClientRect();
   dcv.width = r.width*DPR; dcv.height = r.height*DPR;
@@ -908,13 +962,14 @@ function drawDensity() {
   const max = Math.max(1, ...months.map(m => m.cin + m.cout));
   const pad = {l:54+14+40+14-54, r:118+14};  /* align with slider: play(40)+gap(14) left, readout(118)+gap(14) right */
   const x0 = 54, x1 = w - 132;
-  const bw = (x1-x0)/months.length;
   for (let i=0; i<months.length; i++) {
     const m = months[i];
     if (!m.cin && !m.cout) continue;
     const hh = (m.cin+m.cout)/max * (h-6);
     const hin = m.cin/max * (h-6);
-    const x = x0 + i*bw;
+    const x = x0 + (m.t0-T0)/(T1-T0)*(x1-x0);
+    const nx = x0 + (m.t1-T0)/(T1-T0)*(x1-x0);
+    const bw = nx-x;
     dctx.fillStyle = secondCol;
     dctx.globalAlpha = 0.85;
     dctx.fillRect(x, h-hh, Math.max(1.5, bw-1.5), hh-hin);
@@ -958,7 +1013,11 @@ playBtn.addEventListener("click", () => {
   if (!playing && T >= T1 - DAY) T = T0;   // replay from start
   setPlaying(!playing);
 });
-function syncScrub() { scrub.value = Math.round(1000*(T-T0)/(T1-T0)); }
+function syncScrub() {
+  const p = Math.max(0, Math.min(1, (T-T0)/(T1-T0)));
+  scrub.value = Math.round(1000*p);
+  densityHead.style.left = (54 + p*Math.max(0, dcv.clientWidth-186)) + "px";
+}
 scrub.addEventListener("input", () => {
   T = T0 + (T1-T0)*scrub.value/1000;
   setPlaying(false);
